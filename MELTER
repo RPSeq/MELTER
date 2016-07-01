@@ -1,0 +1,515 @@
+#!/usr/bin/env bash
+
+###################################################################
+#Author: Ryan P Smith (ryanpsmith@wustl.edu ryan.smith.p@gmail.com)
+#Version: 0.0.1
+#Date: 2016-6-25
+#Purpose: Automate Eugene Gardner's MELT (melt.igs.umaryland.edu) on the LSF platform 
+###################################################################
+
+
+####################################
+####<etc>
+####################################
+
+#Set Script Name variable
+SCRIPT=`basename ${BASH_SOURCE[0]}`
+
+#Make sure script exits if any command fails
+set -e
+
+####################################
+####</etc>
+####################################
+
+
+####################################
+####<getopts>
+####################################
+
+#Help function
+function HELP {
+  echo -e \
+  "\nUsage: bash ${SCRIPT} [opts] [sample1.bam sample2.bam ...]
+
+        Required Parameters:
+          -d <arg> [path to output dir] 
+          -w <arg> [path to working dir]
+          -r <arg> [path to reference]
+          -t <arg> [path to transposon refs dir]
+          -m <arg> [path to MELT.jar]
+          -c <arg> [path to coverage info file] (<BAM> <COV>)
+          -n <arg> [path to gene annotation file] (.bed)
+          -s <arg> [dir containing sample insert size histograms]
+
+        Optional Parameters:
+          -l <arg> [logs dir]
+          -f <arg> [expected fragment len] (estimated by sampling input bams)
+          -q <arg> [LSF queue]
+          -z <arg> [Max number of records in memory] [5000]
+
+        Optional Flags:
+          -p       [preprocess input bams] \n" >&2
+  exit 1
+}
+
+
+#Check the number of arguments. If none are passed, print help and exit.
+if [ $# -eq 0 ]; then
+  HELP
+fi
+
+#Default Values
+RECS=5000
+
+while getopts :d:w:r:t:m:c:n:l:pf:q:s:z:h FLAG; do
+  case $FLAG in
+    d)
+      OUTPUT_DIR=$OPTARG
+      ;;
+    w)
+      WORK=$OPTARG
+      ;;
+    r)
+      REF=$OPTARG
+      ;;
+    t)
+      TREFS=$OPTARG
+      ;;
+    m)
+      MELT=$OPTARG
+      ;;
+    c)
+      COV=$OPTARG
+      ;;
+    n)
+      ANN=$OPTARG
+      ;;
+    l)
+      LOGS=$OPTARG
+      ;;
+    p)
+      PRE=true
+      ;;
+    f)
+      FLEN=$OPTARG
+      ;;
+    q)
+      QUEUE=$OPTARG
+      ;;
+    s)
+      HISTS=$OPTARG
+      ;;
+    z)
+      RECS=$OPTARG
+      ;;
+    h)
+      HELP
+      ;;
+    \?) #unrecognized option - show help
+      echo -e "\nOption -$OPTARG not allowed." >&2
+      HELP
+      ;;
+    :)
+      echo -e "\nMissing option argument for -$OPTARG" >&2
+      HELP
+      ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+####################################
+####</getopts>
+####################################
+
+
+####################################
+####<Arguments verification>
+####################################
+
+help_on=false
+
+#Check all mandatory args
+if [ ! $OUTPUT_DIR ]; then
+  echo -e "\nError: must provide -o <output dir>" >&2
+  help_on=true
+fi
+
+if [ ! $WORK ]; then
+  echo -e "\nError: must provide -w <working dir>" >&2
+  help_on=true
+fi
+
+if [ ! $REF ]; then
+  echo -e "\nError: must provide -r <reference>" >&2
+  help_on=true
+fi
+
+if [ ! $TREFS ]; then
+  echo -e "\nError: must provide -t <transposon refs dir>" >&2
+  help_on=true
+fi
+
+if [ ! $MELT ]; then
+  echo -e "\nError: must provide -m <MELT.jar>" >&2
+  help_on=true
+fi
+
+if [ ! $COV ]; then
+  echo -e "\nError: must provide -c <coverage info file>" >&2
+  help_on=true
+fi
+
+if [ ! $ANN ]; then
+  echo -e "\nError: must provide -n <gene annotation file>" >&2
+  help_on=true
+fi
+
+if [ ! $HISTS ]; then
+  echo -e "\nError: must provide -n <insert size dir>" >&2
+  help_on=true
+fi
+
+#get input bam files
+if [ $# -ne 0 ]; then
+  BAMS=("$@")
+else
+  echo -e "\nError: must provide one or more .bam files" >&2
+  help_on=true
+fi
+
+#Print help if any mandatory args missing
+if [ $help_on = true ]; then
+  HELP
+fi
+
+####################################
+####</Arguments verification>
+####################################
+
+
+####################################
+####<Functions>
+####################################
+
+function sjoin {
+
+  local d=$1; 
+  shift; 
+  echo -n "$1"; 
+  shift; 
+  printf "%s" "${@/#/$d}"; 
+
+}
+
+
+function Preprocess {
+
+  DEPENDS=()
+
+  for BAM in ${BAMS[@]}
+  do
+    #get file info
+    BAMNAME=`basename $BAM`
+    sample=${BAMNAME%.*}
+
+    #launch LSF job
+    bsub -n 4 -M 4000000 \
+      -R "select[mem>4000] rusage[mem=4000] span[hosts=1]" \
+      -J ${sample}.PRE \
+      -o $LOGS/PRE.${sample}.out \
+      -e $LOGS/PRE.${sample}.err \
+      "java -Xmx4g -Xms2g -jar $MELT \
+        Preprocess \
+        $BAM \
+        $REF \
+        4"
+
+    DEPENDS+=("done(${sample}.PRE)")
+
+  done
+
+  #Join dependency conditions with && 
+  PRE_DEPEND=$(sjoin " && " ${DEPENDS[@]})
+
+}
+
+
+function IndivAnalysis {
+
+
+  for TREF in `ls $TREFS/*.zip`
+  do
+
+    TFILE=`basename $TREF`
+    MEI=${TFILE%.*}
+
+    for BAM in ${BAMS[@]}
+    do
+      #get bam file info
+      BAMNAME=`basename $BAM`
+      sample=${BAMNAME%.*}
+
+      #get read len
+      RLEN=$(samtools view $BAM \
+            | awk '{print length($10)}' \
+            | head -1000 \
+            | sort -u \
+            | head -n 1)
+
+      if [ ! $PRE ]; then
+        bsub -n 1 -M 16000000 \
+          -R "select[mem>16000] rusage[mem=16000] span[hosts=1]" \
+          -J ${MEI}.${sample}.IND \
+          -o $LOGS/IND.${MEI}.${sample}.out \
+          -e $LOGS/IND.${MEI}.${sample}.err \
+          "java -Xmx16g -Xms8g -jar $MELT \
+            IndivAnalysis \
+            -c ${COVERAGE[$sample]} \
+            -w $WORK/${MEI}_DISCOVERY \
+            -l $BAM \
+            -r $RLEN \
+            -t $TREF \
+            -z $RECS \
+            -h $REF"
+
+        else
+
+        bsub -n 1 -M 16000000 \
+          -R "select[mem>16000] rusage[mem=16000] span[hosts=1]" \
+          -J ${MEI}.${sample}.IND \
+          -o $LOGS/IND.${MEI}.${sample}.out \
+          -e $LOGS/IND.${MEI}.${sample}.err \
+          -w "$PRE_DEPEND" \
+          "java -Xmx16g -Xms8g -jar $MELT \
+            IndivAnalysis \
+            -c ${COVERAGE[$sample]} \
+            -w $WORK/${MEI}_DISCOVERY \
+            -l $BAM \
+            -r $RLEN \
+            -t $TREF \
+            -z $RECS \
+            -h $REF"
+
+      fi
+
+      done
+
+    done
+
+}
+
+
+function GroupAnalysis {
+
+  for TREF in `ls $TREFS/*.zip`
+  do
+
+    TFILE=`basename $TREF`
+    MEI=${TFILE%.*}
+
+    DEPENDS=()
+
+    for BAM in ${BAMS[@]}
+    do
+      BAMNAME=`basename $BAM`
+      sample=${BAMNAME%.*}
+      DEPENDS+=("done(${MEI}.${sample}.IND)")
+    done
+
+    INDIV_DEPEND=$(sjoin " && " ${DEPENDS[@]})
+
+    RLEN=$(samtools view $BAM \
+          | awk '{print length($10)}' \
+          | head -1000 \
+          | sort -u \
+          | head -n 1)
+
+    #group analysis
+    bsub -n 1 -M 8000000 \
+      -R "select[mem>8000] rusage[mem=8000] span[hosts=1]" \
+      -J ${MEI}.GROUP \
+      -o $LOGS/GROUP.${MEI}.out \
+      -e $LOGS/GROUP.${MEI}.err \
+      -w "$INDIV_DEPEND" \
+      "java -Xmx8g -Xms2g -jar $MELT \
+        GroupAnalysis \
+        -w $WORK/${MEI}_DISCOVERY \
+        -l $WORK/${MEI}_DISCOVERY \
+        -r $RLEN \
+        -t $TREF \
+        -z $RECS \
+        -h $REF \
+        -n $ANN"
+
+    done
+
+}
+
+
+function Genotype {
+
+  #genotyping
+  for TREF in `ls $TREFS/*.zip`
+  do
+    TFILE=`basename $TREF`
+    MEI=${TFILE%.*}
+
+    GROUP_DEPEND="done(${MEI}.GROUP)"
+
+    for BAM in ${BAMS[@]}
+    do
+      BAMNAME=`basename $BAM`
+      sample=${BAMNAME%.*}
+
+      #get read len
+      RLEN=$(samtools view $BAM \
+            | awk '{print length($10)}' \
+            | head -1000 \
+            | sort -u \
+            | head -n 1)
+
+      #get insert size (between read pairs)
+      ILEN=$(grep -v 'e' $HISTS/${sample}.histo \
+            | sort -k2,2n \
+            | tail -n 1 \
+            | cut -f 1)
+
+      #calculate template len
+      TLEN=$(($ILEN + $RLEN*2))
+
+      #Get IndivAnalysis TSV filename (remove _MELT suffix)
+      TSV=$(cut -f 1 -d _ <(echo $MEI))
+      bsub -n 1 -M 16000000 \
+        -R "select[mem>16000] rusage[mem=16000] span[hosts=1]" \
+        -J ${MEI}.${sample}.GENO \
+        -o $LOGS/GENO.${MEI}.${sample}.out \
+        -e $LOGS/GENO.${MEI}.${sample}.err \
+        -w "$GROUP_DEPEND" \
+        "java -Xmx16g -Xms8g -jar $MELT \
+          Genotype \
+          -e $TLEN \
+          -w $WORK/${MEI}_DISCOVERY \
+          -p $WORK/${MEI}_DISCOVERY \
+          -l $BAM \
+          -t $TREF \
+          -z $RECS \
+          -h $REF; \
+          ls $WORK/${MEI}_DISCOVERY/*.${TSV}.tsv > $WORK/${MEI}.list;"
+
+    done
+
+  done
+
+}
+
+
+function MakeVCF {
+  for TREF in `ls $TREFS/*.zip`
+  do
+    TFILE=`basename $TREF`
+    MEI=${TFILE%.*}
+
+    DEPENDS=()
+
+    for BAM in ${BAMS[@]}
+    do
+      BAMNAME=`basename $BAM`
+      sample=${BAMNAME%.*}
+      DEPENDS+=("done(${MEI}.${sample}.GENO)")
+    done
+
+    GENO_DEPEND=$(sjoin " && " ${DEPENDS[@]})
+
+    bsub -n 1 -M 4000000 \
+      -R "select[mem>4000] rusage[mem=4000] span[hosts=1]" \
+      -J ${MEI}.VCF \
+      -o $LOGS/VCF.${MEI}.out \
+      -e $LOGS/VCF.${MEI}.err \
+      -w "$GENO_DEPEND" \
+       "java -Xmx4g -Xms2g -jar $MELT \
+        MakeVCF \
+        -f $WORK/${MEI}.list \
+        -w $WORK/${MEI}_DISCOVERY \
+        -p $WORK/${MEI}_DISCOVERY \
+        -t $TREF \
+        -h $REF \
+        -o $OUTPUT_DIR"        
+    done
+
+}
+
+
+####################################
+####</Functions>
+####################################
+
+
+####################################
+####<Main>
+####################################
+
+#make working dirs for each MEI
+for TREF in `ls $TREFS`
+do
+  TFILE=`basename $TREF`
+  MEI=${TFILE%.*}
+  mkdir -p $WORK/${MEI}_DISCOVERY
+done
+
+mkdir -p $OUTPUT_DIR
+
+#make LSF logs dir
+if [ $LOGS ]; then
+  mkdir -p $LOGS
+else
+  mkdir -p $WORK/logs
+  LOGS=$WORK/logs
+fi
+
+#read coverage file to associative array
+declare -A COVERAGE
+while read sample cov
+do 
+  COVERAGE["$sample"]="$cov"
+done < <(cat $COV)
+
+# 0.
+if [ $PRE ]; then
+  Preprocess
+fi
+
+# 1.  Map
+IndivAnalysis
+
+# 2.  Reduce
+GroupAnalysis
+
+# 3.  Map
+Genotype
+
+# 4.  Reduce
+MakeVCF
+
+exit 0
+
+####################################
+####</Main>
+####################################
+
+#pwd
+#/gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT
+
+#example usage in Hall Lab on the MGI LSF cluster
+# bash scripts/MELTER.sh \
+#     -d /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/testmelter \
+#     -w /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/testmelter \
+#     -r /gscmnt/gc2719/halllab/genomes/mouse/mm10/GRCm38_68.fa \
+#     -t /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/MEI_REFS/melter \
+#     -m /gscmnt/gc2719/halllab/users/rsmith/src/MELTv2.0.1/MELT.jar \
+#     -c /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/cov/sample.medians.txt \
+#     -n /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/annotations/mm10_UCSCGenes.bed \
+#     -s /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/pairend_distros \
+#     -z 10000 \
+#     $(ls $PWD/merge/*/*.bam | grep -v disc | grep -v split)
