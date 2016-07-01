@@ -49,7 +49,8 @@ function HELP {
           -z <arg> [Max number of records in memory] [5000]
 
         Optional Flags:
-          -p       [preprocess input bams] \n" >&2
+          -p       [preprocess input bams]
+          -y       [dry run] \n" >&2
   exit 1
 }
 
@@ -103,6 +104,8 @@ while getopts :d:w:r:t:m:c:n:l:pf:q:s:z:h FLAG; do
     z)
       RECS=$OPTARG
       ;;
+    y)
+      DRY=true
     h)
       HELP
       ;;
@@ -215,16 +218,29 @@ function Preprocess {
     sample=${BAMNAME%.*}
 
     #launch LSF job
-    bsub -n 4 -M 4000000 \
-      -R "select[mem>4000] rusage[mem=4000] span[hosts=1]" \
+    SUBMIT="bsub -n 4 -M 4000000 \
+      -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
       -J ${sample}.PRE \
       -o $LOGS/PRE.${sample}.out \
-      -e $LOGS/PRE.${sample}.err \
-      "java -Xmx4g -Xms2g -jar $MELT \
-        Preprocess \
-        $BAM \
-        $REF \
-        4"
+      -e $LOGS/PRE.${sample}.err"
+
+    CMD="\"java -Xmx4g -Xms2g -jar $MELT \
+          Preprocess \
+          $BAM \
+          $REF \
+          4\""
+
+    #add queue if needed
+    if [ $QUEUE ]; then
+      SUBMIT=$SUBMIT" -q $QUEUE"
+    fi
+
+    #submit the job
+    if [ $DRY ]; then
+      echo $SUBMIT $CMD
+    else
+      $SUBMIT $CMD
+    fi
 
     DEPENDS+=("done(${sample}.PRE)")
 
@@ -258,13 +274,13 @@ function IndivAnalysis {
             | sort -u \
             | head -n 1)
 
-      if [ ! $PRE ]; then
-        bsub -n 1 -M 16000000 \
-          -R "select[mem>16000] rusage[mem=16000] span[hosts=1]" \
-          -J ${MEI}.${sample}.IND \
-          -o $LOGS/IND.${MEI}.${sample}.out \
-          -e $LOGS/IND.${MEI}.${sample}.err \
-          "java -Xmx16g -Xms8g -jar $MELT \
+      SUBMIT="bsub -n 1 -M 16000000 \
+              -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
+              -J ${MEI}.${sample}.IND \
+              -o $LOGS/IND.${MEI}.${sample}.out \
+              -e $LOGS/IND.${MEI}.${sample}.err"
+
+      CMD="\"java -Xmx16g -Xms8g -jar $MELT \
             IndivAnalysis \
             -c ${COVERAGE[$sample]} \
             -w $WORK/${MEI}_DISCOVERY \
@@ -272,31 +288,25 @@ function IndivAnalysis {
             -r $RLEN \
             -t $TREF \
             -z $RECS \
-            -h $REF"
+            -h $REF\""
 
-        else
-
-        bsub -n 1 -M 16000000 \
-          -R "select[mem>16000] rusage[mem=16000] span[hosts=1]" \
-          -J ${MEI}.${sample}.IND \
-          -o $LOGS/IND.${MEI}.${sample}.out \
-          -e $LOGS/IND.${MEI}.${sample}.err \
-          -w "$PRE_DEPEND" \
-          "java -Xmx16g -Xms8g -jar $MELT \
-            IndivAnalysis \
-            -c ${COVERAGE[$sample]} \
-            -w $WORK/${MEI}_DISCOVERY \
-            -l $BAM \
-            -r $RLEN \
-            -t $TREF \
-            -z $RECS \
-            -h $REF"
-
+      if [ $PRE ]; then
+        SUBMIT=$SUBMIT" -w \"$PRE_DEPEND\""
       fi
 
-      done
+      if [ $QUEUE ]; then
+        SUBMIT=$SUBMIT" -q $QUEUE"
+      fi
+
+      if [ $DRY ]; then
+        echo $SUBMIT $CMD
+      else
+        $SUBMIT $CMD
+      fi
 
     done
+
+  done
 
 }
 
@@ -327,21 +337,32 @@ function GroupAnalysis {
           | head -n 1)
 
     #group analysis
-    bsub -n 1 -M 8000000 \
-      -R "select[mem>8000] rusage[mem=8000] span[hosts=1]" \
-      -J ${MEI}.GROUP \
-      -o $LOGS/GROUP.${MEI}.out \
-      -e $LOGS/GROUP.${MEI}.err \
-      -w "$INDIV_DEPEND" \
-      "java -Xmx8g -Xms2g -jar $MELT \
-        GroupAnalysis \
-        -w $WORK/${MEI}_DISCOVERY \
-        -l $WORK/${MEI}_DISCOVERY \
-        -r $RLEN \
-        -t $TREF \
-        -z $RECS \
-        -h $REF \
-        -n $ANN"
+    SUBMIT="bsub -n 1 -M 8000000 \
+            -R \"select[mem>8000] rusage[mem=8000] span[hosts=1]\" \
+            -J ${MEI}.GROUP \
+            -o $LOGS/GROUP.${MEI}.out \
+            -e $LOGS/GROUP.${MEI}.err \
+            -w \"$INDIV_DEPEND\""
+
+    CMD="\"java -Xmx8g -Xms2g -jar $MELT \
+          GroupAnalysis \
+          -w $WORK/${MEI}_DISCOVERY \
+          -l $WORK/${MEI}_DISCOVERY \
+          -r $RLEN \
+          -t $TREF \
+          -z $RECS \
+          -h $REF \
+          -n $ANN\""
+
+    if [ $QUEUE ]; then
+      SUBMIT=$SUBMIT" -q $QUEUE"
+    fi
+
+    if [ $DRY ]; then
+      echo $SUBMIT $CMD
+    else
+      $SUBMIT $CMD
+    fi
 
     done
 
@@ -381,22 +402,34 @@ function Genotype {
 
       #Get IndivAnalysis TSV filename (remove _MELT suffix)
       TSV=$(cut -f 1 -d _ <(echo $MEI))
-      bsub -n 1 -M 16000000 \
-        -R "select[mem>16000] rusage[mem=16000] span[hosts=1]" \
-        -J ${MEI}.${sample}.GENO \
-        -o $LOGS/GENO.${MEI}.${sample}.out \
-        -e $LOGS/GENO.${MEI}.${sample}.err \
-        -w "$GROUP_DEPEND" \
-        "java -Xmx16g -Xms8g -jar $MELT \
-          Genotype \
-          -e $TLEN \
-          -w $WORK/${MEI}_DISCOVERY \
-          -p $WORK/${MEI}_DISCOVERY \
-          -l $BAM \
-          -t $TREF \
-          -z $RECS \
-          -h $REF; \
-          ls $WORK/${MEI}_DISCOVERY/*.${TSV}.tsv > $WORK/${MEI}.list;"
+
+      SUBMIT="bsub -n 1 -M 16000000 \
+              -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
+              -J ${MEI}.${sample}.GENO \
+              -o $LOGS/GENO.${MEI}.${sample}.out \
+              -e $LOGS/GENO.${MEI}.${sample}.err \
+              -w \"$GROUP_DEPEND\""
+
+      CMD="\"java -Xmx16g -Xms8g -jar $MELT \
+              Genotype \
+              -e $TLEN \
+              -w $WORK/${MEI}_DISCOVERY \
+              -p $WORK/${MEI}_DISCOVERY \
+              -l $BAM \
+              -t $TREF \
+              -z $RECS \
+              -h $REF; \
+              ls $WORK/${MEI}_DISCOVERY/*.${TSV}.tsv > $WORK/${MEI}.list;\""
+
+      if [ $QUEUE ]; then
+        SUBMIT=$SUBMIT" -q $QUEUE"
+      fi
+
+      if [ $DRY ]; then
+        echo $SUBMIT $CMD
+      else
+        $SUBMIT $CMD
+      fi
 
     done
 
@@ -422,21 +455,33 @@ function MakeVCF {
 
     GENO_DEPEND=$(sjoin " && " ${DEPENDS[@]})
 
-    bsub -n 1 -M 4000000 \
-      -R "select[mem>4000] rusage[mem=4000] span[hosts=1]" \
+    SUBMIT="bsub -n 1 -M 4000000 \
+      -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
       -J ${MEI}.VCF \
       -o $LOGS/VCF.${MEI}.out \
       -e $LOGS/VCF.${MEI}.err \
-      -w "$GENO_DEPEND" \
-       "java -Xmx4g -Xms2g -jar $MELT \
+      -w \"$GENO_DEPEND\""
+
+    CMD="\"java -Xmx4g -Xms2g -jar $MELT \
         MakeVCF \
         -f $WORK/${MEI}.list \
         -w $WORK/${MEI}_DISCOVERY \
         -p $WORK/${MEI}_DISCOVERY \
         -t $TREF \
         -h $REF \
-        -o $OUTPUT_DIR"        
-    done
+        -o $OUTPUT_DIR\""
+
+    if [ $QUEUE ]; then
+      SUBMIT=$SUBMIT" -q $QUEUE"
+    fi
+
+    if [ $DRY ]; then
+      echo $SUBMIT $CMD
+    else
+      $SUBMIT $CMD
+    fi
+
+  done
 
 }
 
@@ -502,14 +547,15 @@ exit 0
 #/gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT
 
 #example usage in Hall Lab on the MGI LSF cluster
-# bash scripts/MELTER.sh \
+# MELTER \
 #     -d /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/testmelter \
 #     -w /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/testmelter \
 #     -r /gscmnt/gc2719/halllab/genomes/mouse/mm10/GRCm38_68.fa \
-#     -t /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/MEI_REFS/melter \
+#     -t /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/MEI_REFS/melter2 \
 #     -m /gscmnt/gc2719/halllab/users/rsmith/src/MELTv2.0.1/MELT.jar \
 #     -c /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/cov/sample.medians.txt \
 #     -n /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/annotations/mm10_UCSCGenes.bed \
 #     -s /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/pairend_distros \
 #     -z 10000 \
+#     -q hall-lab \
 #     $(ls $PWD/merge/*/*.bam | grep -v disc | grep -v split)
