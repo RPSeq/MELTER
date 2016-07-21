@@ -17,6 +17,7 @@ SCRIPT=`basename ${BASH_SOURCE[0]}`
 
 #Make sure script exits if any command fails
 set -e
+#set -x
 
 ####################################
 ####</etc>
@@ -63,7 +64,7 @@ fi
 #Default Values
 RECS=5000
 
-while getopts :d:w:r:t:m:c:n:l:pf:q:s:z:h FLAG; do
+while getopts :d:w:r:t:m:c:n:l:pf:q:s:z:yh FLAG; do
   case $FLAG in
     d)
       OUTPUT_DIR=$OPTARG
@@ -106,6 +107,7 @@ while getopts :d:w:r:t:m:c:n:l:pf:q:s:z:h FLAG; do
       ;;
     y)
       DRY=true
+      ;;
     h)
       HELP
       ;;
@@ -210,14 +212,13 @@ function sjoin {
 function Preprocess {
 
   DEPENDS=()
-
   for BAM in ${BAMS[@]}
   do
     #get file info
     BAMNAME=`basename $BAM`
     sample=${BAMNAME%.*}
 
-    #launch LSF job
+    #Generate base command strings
     SUBMIT="bsub -n 4 -M 4000000 \
       -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
       -J ${sample}.PRE \
@@ -230,7 +231,7 @@ function Preprocess {
           $REF \
           4\""
 
-    #add queue if needed
+    #Modify command if needed
     if [ $QUEUE ]; then
       SUBMIT=$SUBMIT" -q $QUEUE"
     fi
@@ -239,7 +240,7 @@ function Preprocess {
     if [ $DRY ]; then
       echo $SUBMIT $CMD
     else
-      $SUBMIT $CMD
+      echo $SUBMIT $CMD | bash -
     fi
 
     DEPENDS+=("done(${sample}.PRE)")
@@ -274,6 +275,7 @@ function IndivAnalysis {
             | sort -u \
             | head -n 1)
 
+      #Generate base command strings
       SUBMIT="bsub -n 1 -M 16000000 \
               -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
               -J ${MEI}.${sample}.IND \
@@ -290,6 +292,7 @@ function IndivAnalysis {
             -z $RECS \
             -h $REF\""
 
+      #Add options to commands as needed
       if [ $PRE ]; then
         SUBMIT=$SUBMIT" -w \"$PRE_DEPEND\""
       fi
@@ -298,10 +301,11 @@ function IndivAnalysis {
         SUBMIT=$SUBMIT" -q $QUEUE"
       fi
 
+      #run command
       if [ $DRY ]; then
         echo $SUBMIT $CMD
       else
-        $SUBMIT $CMD
+        echo $SUBMIT $CMD | bash -
       fi
 
     done
@@ -319,6 +323,7 @@ function GroupAnalysis {
     TFILE=`basename $TREF`
     MEI=${TFILE%.*}
 
+    #generate job dependency string
     DEPENDS=()
 
     for BAM in ${BAMS[@]}
@@ -330,13 +335,14 @@ function GroupAnalysis {
 
     INDIV_DEPEND=$(sjoin " && " ${DEPENDS[@]})
 
+    #get read len
     RLEN=$(samtools view $BAM \
           | awk '{print length($10)}' \
           | head -1000 \
           | sort -u \
           | head -n 1)
 
-    #group analysis
+    #Generate base commands
     SUBMIT="bsub -n 1 -M 8000000 \
             -R \"select[mem>8000] rusage[mem=8000] span[hosts=1]\" \
             -J ${MEI}.GROUP \
@@ -354,6 +360,7 @@ function GroupAnalysis {
           -h $REF \
           -n $ANN\""
 
+    #Add options as needed
     if [ $QUEUE ]; then
       SUBMIT=$SUBMIT" -q $QUEUE"
     fi
@@ -361,7 +368,7 @@ function GroupAnalysis {
     if [ $DRY ]; then
       echo $SUBMIT $CMD
     else
-      $SUBMIT $CMD
+      echo $SUBMIT $CMD | bash -
     fi
 
     done
@@ -374,6 +381,7 @@ function Genotype {
   #genotyping
   for TREF in `ls $TREFS/*.zip`
   do
+
     TFILE=`basename $TREF`
     MEI=${TFILE%.*}
 
@@ -428,7 +436,7 @@ function Genotype {
       if [ $DRY ]; then
         echo $SUBMIT $CMD
       else
-        $SUBMIT $CMD
+        echo $SUBMIT $CMD | bash -
       fi
 
     done
@@ -441,6 +449,7 @@ function Genotype {
 function MakeVCF {
   for TREF in `ls $TREFS/*.zip`
   do
+
     TFILE=`basename $TREF`
     MEI=${TFILE%.*}
 
@@ -478,13 +487,12 @@ function MakeVCF {
     if [ $DRY ]; then
       echo $SUBMIT $CMD
     else
-      $SUBMIT $CMD
+      echo $SUBMIT $CMD | bash -
     fi
 
   done
 
 }
-
 
 ####################################
 ####</Functions>
