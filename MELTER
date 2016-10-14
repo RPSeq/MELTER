@@ -39,13 +39,11 @@ function HELP {
           -r <arg> [path to reference]
           -t <arg> [path to transposon refs dir]
           -m <arg> [path to MELT.jar]
-          -c <arg> [path to coverage info file] (<BAM> <COV>)
+          -c <arg> [path to bam info file] (<BAM> <EXPECTED_COV> <INSERT_SIZE>)
           -n <arg> [path to gene annotation file] (.bed)
-          -s <arg> [dir containing sample insert size histograms]
 
         Optional Parameters:
           -l <arg> [logs dir]
-          -f <arg> [expected fragment len] (estimated by sampling input bams)
           -q <arg> [LSF queue]
           -z <arg> [Max number of records in memory] [5000]
 
@@ -64,7 +62,7 @@ fi
 #Default Values
 RECS=5000
 
-while getopts :d:w:r:t:m:c:n:l:pf:q:s:z:yh FLAG; do
+while getopts :d:w:r:t:m:c:n:l:pq:z:yh FLAG; do
   case $FLAG in
     d)
       OUTPUT_DIR=$OPTARG
@@ -93,14 +91,8 @@ while getopts :d:w:r:t:m:c:n:l:pf:q:s:z:yh FLAG; do
     p)
       PRE=true
       ;;
-    f)
-      FLEN=$OPTARG
-      ;;
     q)
       QUEUE=$OPTARG
-      ;;
-    s)
-      HISTS=$OPTARG
       ;;
     z)
       RECS=$OPTARG
@@ -168,11 +160,6 @@ fi
 
 if [ ! $ANN ]; then
   echo -e "\nError: must provide -n <gene annotation file>" >&2
-  help_on=true
-fi
-
-if [ ! $HISTS ]; then
-  echo -e "\nError: must provide -n <insert size dir>" >&2
   help_on=true
 fi
 
@@ -399,11 +386,8 @@ function Genotype {
             | sort -u \
             | head -n 1)
 
-      #get insert size (between read pairs)
-      ILEN=$(grep -v 'e' $HISTS/${sample}.histo \
-            | sort -k2,2n \
-            | tail -n 1 \
-            | cut -f 1)
+      #get insert size from info file(between read pairs)
+      ILEN=ISIZE["$sample"]
 
       #calculate template len
       TLEN=$(($ILEN + $RLEN*2))
@@ -523,9 +507,11 @@ fi
 
 #read coverage file to associative array
 declare -A COVERAGE
-while read sample cov
+declare -A ISIZE
+while read sample cov ilen
 do 
   COVERAGE["$sample"]="$cov"
+  ISIZE["$sample"]="$ilen"
 done < <(cat $COV)
 
 # 0.
@@ -550,20 +536,3 @@ exit 0
 ####################################
 ####</Main>
 ####################################
-
-#pwd
-#/gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT
-
-#example usage in Hall Lab on the MGI LSF cluster
-# MELTER \
-#     -d /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/testmelter \
-#     -w /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/testmelter \
-#     -r /gscmnt/gc2719/halllab/genomes/mouse/mm10/GRCm38_68.fa \
-#     -t /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/melt/MEI_REFS/melter2 \
-#     -m /gscmnt/gc2719/halllab/users/rsmith/src/MELTv2.0.1/MELT.jar \
-#     -c /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/cov/sample.medians.txt \
-#     -n /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/annotations/mm10_UCSCGenes.bed \
-#     -s /gscmnt/gc2719/halllab/users/rsmith/projects/NRL_NT/pairend_distros \
-#     -z 10000 \
-#     -q hall-lab \
-#     $(ls $PWD/merge/*/*.bam | grep -v disc | grep -v split)
