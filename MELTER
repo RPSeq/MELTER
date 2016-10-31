@@ -198,7 +198,6 @@ function sjoin {
 
 function Preprocess {
 
-  DEPENDS=()
   for BAM in ${BAMS[@]}
   do
     #get file info
@@ -230,12 +229,9 @@ function Preprocess {
       echo $SUBMIT $CMD | bash -
     fi
 
-    DEPENDS+=("done(${sample}.PRE)")
 
   done
 
-  #Join dependency conditions with && 
-  PRE_DEPEND=$(sjoin " && " ${DEPENDS[@]})
 
 }
 
@@ -281,7 +277,7 @@ function IndivAnalysis {
 
       #Add options to commands as needed
       if [ $PRE ]; then
-        SUBMIT=$SUBMIT" -w \"$PRE_DEPEND\""
+        SUBMIT=$SUBMIT" -w \"done(${sample}.PRE)\""
       fi
 
       if [ $QUEUE ]; then
