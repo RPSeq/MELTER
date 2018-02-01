@@ -222,8 +222,8 @@ function Preprocess {
 
     CMD="\"$JAVA -Xmx4g -Xms2g -jar $MELT \
           Preprocess \
-          $BAM \
-          $REF \
+          -bamfile $BAM \
+          -h $REF \
           4\""
 
     #Modify command if needed
