@@ -167,6 +167,11 @@ if [ ! $ANN ]; then
   help_on=true
 fi
 
+if [ ! $JAVA ]; then
+  echo -e "\nError: must provide -j <java runtime executable>" >&2
+  help_on=true
+fi
+
 #get input bam files
 if [ $# -ne 0 ]; then
   BAMS=("$@")
