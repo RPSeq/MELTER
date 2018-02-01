@@ -41,6 +41,7 @@ function HELP {
           -m <arg> [path to MELT.jar]
           -c <arg> [path to bam info file] (<BAM> <EXPECTED_COV> <INSERT_SIZE>)
           -n <arg> [path to gene annotation file] (.bed)
+          -j <arg> [path to java runtime executable]
 
         Optional Parameters:
           -l <arg> [logs dir]
@@ -62,7 +63,7 @@ fi
 #Default Values
 RECS=5000
 
-while getopts :d:w:r:t:m:c:n:l:pq:z:yh FLAG; do
+while getopts :d:w:r:t:m:c:n:j:l:pq:z:yh FLAG; do
   case $FLAG in
     d)
       OUTPUT_DIR=$OPTARG
@@ -84,6 +85,9 @@ while getopts :d:w:r:t:m:c:n:l:pq:z:yh FLAG; do
       ;;
     n)
       ANN=$OPTARG
+      ;;
+    j)
+      JAVA=$OPTARG
       ;;
     l)
       LOGS=$OPTARG
@@ -211,7 +215,7 @@ function Preprocess {
       -o $LOGS/PRE.${sample}.out \
       -e $LOGS/PRE.${sample}.err"
 
-    CMD="\"java -Xmx4g -Xms2g -jar $MELT \
+    CMD="\"$JAVA -Xmx4g -Xms2g -jar $MELT \
           Preprocess \
           $BAM \
           $REF \
@@ -265,7 +269,7 @@ function IndivAnalysis {
               -o $LOGS/IND.${MEI}.${sample}.out \
               -e $LOGS/IND.${MEI}.${sample}.err"
 
-      CMD="\"java -Xmx16g -Xms8g -jar $MELT \
+      CMD="\"$JAVA -Xmx16g -Xms8g -jar $MELT \
             IndivAnalysis \
             -c ${COVERAGE[$sample]} \
             -w $WORK/${MEI}_DISCOVERY \
@@ -333,7 +337,7 @@ function GroupAnalysis {
             -e $LOGS/GROUP.${MEI}.err \
             -w \"$INDIV_DEPEND\""
 
-    CMD="\"java -Xmx8g -Xms2g -jar $MELT \
+    CMD="\"$JAVA -Xmx8g -Xms2g -jar $MELT \
           GroupAnalysis \
           -w $WORK/${MEI}_DISCOVERY \
           -l $WORK/${MEI}_DISCOVERY \
@@ -398,7 +402,7 @@ function Genotype {
               -e $LOGS/GENO.${MEI}.${sample}.err \
               -w \"$GROUP_DEPEND\""
 
-      CMD="\"java -Xmx16g -Xms8g -jar $MELT \
+      CMD="\"$JAVA -Xmx16g -Xms8g -jar $MELT \
               Genotype \
               -e $TLEN \
               -w $WORK/${MEI}_DISCOVERY \
@@ -451,7 +455,7 @@ function MakeVCF {
       -e $LOGS/VCF.${MEI}.err \
       -w \"$GENO_DEPEND\""
 
-    CMD="\"java -Xmx4g -Xms2g -jar $MELT \
+    CMD="\"$JAVA -Xmx4g -Xms2g -jar $MELT \
         MakeVCF \
         -f $WORK/${MEI}.list \
         -w $WORK/${MEI}_DISCOVERY \
