@@ -330,7 +330,7 @@ function GroupAnalysis {
     INDIV_DEPEND=$(sjoin " && " ${DEPENDS[@]})
 
     #get read len
-    RLEN=$(samtools view $BAM \
+    RLEN=$(samtools view -T $REF $BAM \
           | awk '{print length($10)}' \
           | head -1000 \
           | sort -u \
