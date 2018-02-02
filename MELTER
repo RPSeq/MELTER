@@ -65,6 +65,9 @@ RECS=5000
 # research-hpc is docker-enabled LSF queue
 QUEUE="research-hpc"
 
+# default melt (in docker container)
+MELT="/opt/MELTv2.1.4/MELT.jar"
+
 while getopts :d:w:r:t:m:c:n:l:pq:z:yh FLAG; do
   case $FLAG in
     d)
