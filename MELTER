@@ -37,10 +37,11 @@ function HELP {
         Required Parameters:
           -d <arg> [path to output dir] 
           -w <arg> [path to working dir]
+          -j <arg> [job label]
           -r <arg> [path to reference]
           -t <arg> [path to transposon refs dir]
           -c <arg> [path to bam info file] (<BAM> <EXPECTED_COV> <INSERT_SIZE>)
-          -n <arg> [path to gene annotation file] (.bed)
+          -a <arg> [path to gene annotation file] (.bed)
 
         Optional Parameters:
           -l <arg> [logs dir]
@@ -68,13 +69,16 @@ QUEUE="research-hpc"
 # default melt (in docker container)
 MELT="/opt/MELTv2.1.4/MELT.jar"
 
-while getopts :d:w:r:t:m:c:n:l:pq:z:yh FLAG; do
+while getopts :d:w:n:r:t:m:c:a:l:pq:z:yh FLAG; do
   case $FLAG in
     d)
       OUTPUT_DIR=$OPTARG
       ;;
     w)
       WORK=$OPTARG
+      ;;
+    j)
+      NAME=$OPTARG
       ;;
     r)
       REF=$OPTARG
@@ -88,7 +92,7 @@ while getopts :d:w:r:t:m:c:n:l:pq:z:yh FLAG; do
     c)
       COV=$OPTARG
       ;;
-    n)
+    a)
       ANN=$OPTARG
       ;;
     l)
@@ -145,6 +149,11 @@ fi
 
 if [ ! $WORK ]; then
   echo -e "\nError: must provide -w <working dir>" >&2
+  help_on=true
+fi
+
+if [ ! $NAME ]; then
+  echo -e "\nError: must provide -n <name>" >&2
   help_on=true
 fi
 
@@ -219,7 +228,7 @@ function Preprocess {
       bsub -n 4 -M 4000000 \
       -a 'docker(rpseq/melt:latest)' \
       -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
-      -J ${sample}.PRE \
+      -J ${NAME}.${sample}.PRE \
       -o $LOGS/PRE.${sample}.out \
       -e $LOGS/PRE.${sample}.err"
 
@@ -275,7 +284,7 @@ function IndivAnalysis {
               bsub -n 1 -M 16000000 \
               -a 'docker(rpseq/melt:latest)' \
               -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
-              -J ${MEI}.${sample}.IND \
+              -J ${NAME}.${MEI}.${sample}.IND \
               -o $LOGS/IND.${MEI}.${sample}.out \
               -e $LOGS/IND.${MEI}.${sample}.err"
 
@@ -291,7 +300,7 @@ function IndivAnalysis {
 
       #Add options to commands as needed
       if [ $PRE ]; then
-        SUBMIT=$SUBMIT" -w \"done(${sample}.PRE)\""
+        SUBMIT=$SUBMIT" -w \"done(${NAME}.${sample}.PRE)\""
       fi
 
       if [ $QUEUE ]; then
@@ -327,7 +336,7 @@ function GroupAnalysis {
     do
       BAMNAME=`basename $BAM`
       sample=${BAMNAME%.*}
-      DEPENDS+=("done(${MEI}.${sample}.IND)")
+      DEPENDS+=("done(${NAME}.${MEI}.${sample}.IND)")
     done
 
     INDIV_DEPEND=$(sjoin " && " ${DEPENDS[@]})
@@ -344,7 +353,7 @@ function GroupAnalysis {
             bsub -n 1 -M 8000000 \
             -a 'docker(rpseq/melt:latest)' \
             -R \"select[mem>8000] rusage[mem=8000] span[hosts=1]\" \
-            -J ${MEI}.GROUP \
+            -J ${NAME}.${MEI}.GROUP \
             -o $LOGS/GROUP.${MEI}.out \
             -e $LOGS/GROUP.${MEI}.err \
             -w \"$INDIV_DEPEND\""
@@ -384,7 +393,7 @@ function Genotype {
     TFILE=`basename $TREF`
     MEI=${TFILE%.*}
 
-    GROUP_DEPEND="done(${MEI}.GROUP)"
+    GROUP_DEPEND="done(${NAME}.${MEI}.GROUP)"
 
     for BAM in ${BAMS[@]}
     do
@@ -411,7 +420,7 @@ function Genotype {
               bsub -n 1 -M 16000000 \
               -a 'docker(rpseq/melt:latest)' \
               -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
-              -J ${MEI}.${sample}.GENO \
+              -J ${NAME}.${MEI}.${sample}.GENO \
               -o $LOGS/GENO.${MEI}.${sample}.out \
               -e $LOGS/GENO.${MEI}.${sample}.err \
               -w \"$GROUP_DEPEND\""
@@ -457,7 +466,7 @@ function MakeVCF {
     do
       BAMNAME=`basename $BAM`
       sample=${BAMNAME%.*}
-      DEPENDS+=("done(${MEI}.${sample}.GENO)")
+      DEPENDS+=("done(${NAME}.${MEI}.${sample}.GENO)")
     done
 
     GENO_DEPEND=$(sjoin " && " ${DEPENDS[@]})
@@ -466,7 +475,7 @@ function MakeVCF {
       bsub -n 1 -M 4000000 \
       -a 'docker(rpseq/melt:latest)' \
       -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
-      -J ${MEI}.VCF \
+      -J ${NAME}.${MEI}.VCF \
       -o $LOGS/VCF.${MEI}.out \
       -e $LOGS/VCF.${MEI}.err \
       -w \"$GENO_DEPEND\""
