@@ -459,7 +459,8 @@ function MakeVCF {
 
     GENO_DEPEND=$(sjoin " && " ${DEPENDS[@]})
 
-    SUBMIT="bsub -n 1 -M 4000000 \
+    SUBMIT="LSF_DOCKER_PRESERVE_ENVIRONMENT=false \
+      bsub -n 1 -M 4000000 \
       -a 'docker(rpseq/melt:latest)' \
       -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
       -J ${MEI}.VCF \
