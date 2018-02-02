@@ -261,7 +261,7 @@ function IndivAnalysis {
       sample=${BAMNAME%.*}
 
       #get read len
-      RLEN=$(samtools view $BAM \
+      RLEN=$(samtools view -T $REF $BAM \
             | awk '{print length($10)}' \
             | head -1000 \
             | sort -u \
@@ -389,7 +389,7 @@ function Genotype {
       sample=${BAMNAME%.*}
 
       #get read len
-      RLEN=$(samtools view $BAM \
+      RLEN=$(samtools view -T $REF $BAM \
             | awk '{print length($10)}' \
             | head -1000 \
             | sort -u \
