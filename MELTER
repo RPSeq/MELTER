@@ -4,7 +4,8 @@
 #Author: Ryan P Smith (ryanpsmith@wustl.edu ryan.smith.p@gmail.com)
 #Version: 0.0.1
 #Date: 2016-6-25
-#Purpose: Automate Eugene Gardner's MELT (melt.igs.umaryland.edu) on the LSF platform 
+#Purpose: Automate Eugene Gardner's MELT (melt.igs.umaryland.edu) on the LSF platform
+# DOCKER VERSION
 ###################################################################
 
 
@@ -31,21 +32,19 @@ set -e
 #Help function
 function HELP {
   echo -e \
-  "\nUsage: bash ${SCRIPT} [opts] [sample1.bam sample2.bam ...]
+  "\nUsage: bash ${SCRIPT} [opts] [sample1.(b/cr)am sample2.(b/cr)am ...]
 
         Required Parameters:
           -d <arg> [path to output dir] 
           -w <arg> [path to working dir]
           -r <arg> [path to reference]
           -t <arg> [path to transposon refs dir]
-          -m <arg> [path to MELT.jar]
           -c <arg> [path to bam info file] (<BAM> <EXPECTED_COV> <INSERT_SIZE>)
           -n <arg> [path to gene annotation file] (.bed)
-          -j <arg> [path to java runtime executable]
 
         Optional Parameters:
           -l <arg> [logs dir]
-          -q <arg> [LSF queue]
+          -q <arg> [LSF queue] [research-hpc]
           -z <arg> [Max number of records in memory] [5000]
 
         Optional Flags:
@@ -63,7 +62,10 @@ fi
 #Default Values
 RECS=5000
 
-while getopts :d:w:r:t:m:c:n:j:l:pq:z:yh FLAG; do
+# research-hpc is docker-enabled LSF queue
+QUEUE="research-hpc"
+
+while getopts :d:w:r:t:m:c:n:l:pq:z:yh FLAG; do
   case $FLAG in
     d)
       OUTPUT_DIR=$OPTARG
@@ -85,9 +87,6 @@ while getopts :d:w:r:t:m:c:n:j:l:pq:z:yh FLAG; do
       ;;
     n)
       ANN=$OPTARG
-      ;;
-    j)
-      JAVA=$OPTARG
       ;;
     l)
       LOGS=$OPTARG
@@ -113,6 +112,10 @@ while getopts :d:w:r:t:m:c:n:j:l:pq:z:yh FLAG; do
       ;;
     :)
       echo -e "\nMissing option argument for -$OPTARG" >&2
+      HELP
+      ;;
+    *)
+      echo "Unimplemented option: -$OPTARG" >&2;
       HELP
       ;;
   esac
@@ -167,11 +170,6 @@ if [ ! $ANN ]; then
   help_on=true
 fi
 
-if [ ! $JAVA ]; then
-  echo -e "\nError: must provide -j <java runtime executable>" >&2
-  help_on=true
-fi
-
 #get input bam files
 if [ $# -ne 0 ]; then
   BAMS=("$@")
@@ -214,13 +212,15 @@ function Preprocess {
     sample=${BAMNAME%.*}
 
     #Generate base command strings
-    SUBMIT="bsub -n 4 -M 4000000 \
+    SUBMIT="LSF_DOCKER_PRESERVE_ENVIRONMENT=false \
+      bsub -n 4 -M 4000000 \
+      -a 'docker(rpseq/melt:latest)' \
       -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
       -J ${sample}.PRE \
       -o $LOGS/PRE.${sample}.out \
       -e $LOGS/PRE.${sample}.err"
 
-    CMD="\"$JAVA -Xmx4g -Xms2g -jar $MELT \
+    CMD="\"java -Xmx4g -Xms2g -jar $MELT \
           Preprocess \
           -bamfile $BAM \
           -h $REF \
@@ -268,13 +268,15 @@ function IndivAnalysis {
             | head -n 1)
 
       #Generate base command strings
-      SUBMIT="bsub -n 1 -M 16000000 \
+      SUBMIT="LSF_DOCKER_PRESERVE_ENVIRONMENT=false \
+              bsub -n 1 -M 16000000 \
+              -a 'docker(rpseq/melt:latest)' \
               -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
               -J ${MEI}.${sample}.IND \
               -o $LOGS/IND.${MEI}.${sample}.out \
               -e $LOGS/IND.${MEI}.${sample}.err"
 
-      CMD="\"$JAVA -Xmx16g -Xms8g -jar $MELT \
+      CMD="\"java -Xmx16g -Xms8g -jar $MELT \
             IndivAnalysis \
             -c ${COVERAGE[$sample]} \
             -w $WORK/${MEI}_DISCOVERY \
@@ -335,14 +337,16 @@ function GroupAnalysis {
           | head -n 1)
 
     #Generate base commands
-    SUBMIT="bsub -n 1 -M 8000000 \
+    SUBMIT="LSF_DOCKER_PRESERVE_ENVIRONMENT=false \
+            bsub -n 1 -M 8000000 \
+            -a 'docker(rpseq/melt:latest)' \
             -R \"select[mem>8000] rusage[mem=8000] span[hosts=1]\" \
             -J ${MEI}.GROUP \
             -o $LOGS/GROUP.${MEI}.out \
             -e $LOGS/GROUP.${MEI}.err \
             -w \"$INDIV_DEPEND\""
 
-    CMD="\"$JAVA -Xmx8g -Xms2g -jar $MELT \
+    CMD="\"java -Xmx8g -Xms2g -jar $MELT \
           GroupAnalysis \
           -w $WORK/${MEI}_DISCOVERY \
           -l $WORK/${MEI}_DISCOVERY \
@@ -400,14 +404,16 @@ function Genotype {
       #Get IndivAnalysis TSV filename (remove _MELT suffix)
       TSV=$(cut -f 1 -d _ <(echo $MEI))
 
-      SUBMIT="bsub -n 1 -M 16000000 \
+      SUBMIT="LSF_DOCKER_PRESERVE_ENVIRONMENT=false \
+              bsub -n 1 -M 16000000 \
+              -a 'docker(rpseq/melt:latest)' \
               -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
               -J ${MEI}.${sample}.GENO \
               -o $LOGS/GENO.${MEI}.${sample}.out \
               -e $LOGS/GENO.${MEI}.${sample}.err \
               -w \"$GROUP_DEPEND\""
 
-      CMD="\"$JAVA -Xmx16g -Xms8g -jar $MELT \
+      CMD="\"java -Xmx16g -Xms8g -jar $MELT \
               Genotype \
               -e $TLEN \
               -w $WORK/${MEI}_DISCOVERY \
@@ -454,13 +460,14 @@ function MakeVCF {
     GENO_DEPEND=$(sjoin " && " ${DEPENDS[@]})
 
     SUBMIT="bsub -n 1 -M 4000000 \
+      -a 'docker(rpseq/melt:latest)' \
       -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
       -J ${MEI}.VCF \
       -o $LOGS/VCF.${MEI}.out \
       -e $LOGS/VCF.${MEI}.err \
       -w \"$GENO_DEPEND\""
 
-    CMD="\"$JAVA -Xmx4g -Xms2g -jar $MELT \
+    CMD="\"java -Xmx4g -Xms2g -jar $MELT \
         MakeVCF \
         -f $WORK/${MEI}.list \
         -w $WORK/${MEI}_DISCOVERY \
