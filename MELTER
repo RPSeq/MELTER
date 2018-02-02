@@ -186,7 +186,7 @@ fi
 if [ $# -ne 0 ]; then
   BAMS=("$@")
 else
-  echo -e "\nError: must provide one or more .bam files" >&2
+  echo -e "\nError: must provide one or more bam/cram files" >&2
   help_on=true
 fi
 
@@ -292,7 +292,7 @@ function IndivAnalysis {
             IndivAnalysis \
             -c ${COVERAGE[$sample]} \
             -w $WORK/${MEI}_DISCOVERY \
-            -l $BAM \
+            -bamfile $BAM \
             -r $RLEN \
             -t $TREF \
             -z $RECS \
@@ -361,7 +361,7 @@ function GroupAnalysis {
     CMD="\"java -Xmx8g -Xms2g -jar $MELT \
           GroupAnalysis \
           -w $WORK/${MEI}_DISCOVERY \
-          -l $WORK/${MEI}_DISCOVERY \
+          -discoverydir $WORK/${MEI}_DISCOVERY \
           -r $RLEN \
           -t $TREF \
           -z $RECS \
@@ -430,7 +430,7 @@ function Genotype {
               -e $TLEN \
               -w $WORK/${MEI}_DISCOVERY \
               -p $WORK/${MEI}_DISCOVERY \
-              -l $BAM \
+              -bamfile $BAM \
               -t $TREF \
               -z $RECS \
               -h $REF; \
@@ -482,8 +482,8 @@ function MakeVCF {
 
     CMD="\"java -Xmx4g -Xms2g -jar $MELT \
         MakeVCF \
-        -f $WORK/${MEI}.list \
-        -w $WORK/${MEI}_DISCOVERY \
+        -p $WORK/${MEI}.list \
+        -genotypingdir $WORK/${MEI}_DISCOVERY \
         -p $WORK/${MEI}_DISCOVERY \
         -t $TREF \
         -h $REF \
