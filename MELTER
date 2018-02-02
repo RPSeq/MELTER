@@ -69,7 +69,7 @@ QUEUE="research-hpc"
 # default melt (in docker container)
 MELT="/opt/MELTv2.1.4/MELT.jar"
 
-while getopts :d:w:n:r:t:m:c:a:l:pq:z:yh FLAG; do
+while getopts :d:w:j:r:t:m:c:a:l:pq:z:yh FLAG; do
   case $FLAG in
     d)
       OUTPUT_DIR=$OPTARG
