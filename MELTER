@@ -485,6 +485,7 @@ function MakeVCF {
         -p $WORK/${MEI}.list \
         -genotypingdir $WORK/${MEI}_DISCOVERY \
         -p $WORK/${MEI}_DISCOVERY \
+        -w $WORK/${MEI}_DISCOVERY \
         -t $TREF \
         -h $REF \
         -o $OUTPUT_DIR\""
