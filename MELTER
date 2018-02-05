@@ -481,7 +481,6 @@ function MakeVCF {
 
     CMD="\"java -Xmx4g -Xms2g -jar $MELT \
         MakeVCF \
-        -p $WORK/${MEI}.list \
         -genotypingdir $WORK/${MEI}_DISCOVERY \
         -p $WORK/${MEI}_DISCOVERY/${MEI}.pre_geno.tsv \
         -w $WORK/${MEI}_DISCOVERY \
