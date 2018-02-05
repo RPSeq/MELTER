@@ -428,13 +428,13 @@ function Genotype {
       CMD="\"java -Xmx16g -Xms8g -jar $MELT \
               Genotype \
               -e $TLEN \
-              -w $WORK/${MEI}_DISCOVERY \
-              -p $WORK/${MEI}_DISCOVERY \
+              -w ${WORK}/${MEI}_DISCOVERY \
+              -p ${WORK}/${MEI}_DISCOVERY \
               -bamfile $BAM \
               -t $TREF \
               -z $RECS \
               -h $REF && \
-              ls $WORK/${MEI}_DISCOVERY/*.${TSV}.tsv > $WORK/${MEI}.list\""
+              ls ${WORK}/${MEI}_DISCOVERY/*.${TSV}.tsv > ${WORK}/${MEI}.list\""
 
       if [ $QUEUE ]; then
         SUBMIT=$SUBMIT" -q $QUEUE"
