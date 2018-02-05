@@ -433,8 +433,8 @@ function Genotype {
               -bamfile $BAM \
               -t $TREF \
               -z $RECS \
-              -h $REF; \
-              ls $WORK/${MEI}_DISCOVERY/*.${TSV}.tsv > $WORK/${MEI}.list;\""
+              -h $REF && \
+              ls $WORK/${MEI}_DISCOVERY/*.${TSV}.tsv > $WORK/${MEI}.list\""
 
       if [ $QUEUE ]; then
         SUBMIT=$SUBMIT" -q $QUEUE"
