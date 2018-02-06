@@ -281,9 +281,9 @@ function IndivAnalysis {
 
       #Generate base command strings
       SUBMIT="LSF_DOCKER_PRESERVE_ENVIRONMENT=false \
-              bsub -n 1 -M 16000000 \
+              bsub -n 1 -M 26000000 \
               -a 'docker(rpseq/melt:latest)' \
-              -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
+              -R \"select[mem>26000] rusage[mem=26000] span[hosts=1]\" \
               -J ${NAME}.${MEI}.${sample}.IND \
               -o $LOGS/IND.${MEI}.${sample}.out \
               -e $LOGS/IND.${MEI}.${sample}.err"
@@ -471,9 +471,9 @@ function MakeVCF {
     GENO_DEPEND=$(sjoin " && " ${DEPENDS[@]})
 
     SUBMIT="LSF_DOCKER_PRESERVE_ENVIRONMENT=false \
-      bsub -n 1 -M 4000000 \
+      bsub -n 1 -M 8000000 \
       -a 'docker(rpseq/melt:latest)' \
-      -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
+      -R \"select[mem>8000] rusage[mem=8000] span[hosts=1]\" \
       -J ${NAME}.${MEI}.VCF \
       -o $LOGS/VCF.${MEI}.out \
       -e $LOGS/VCF.${MEI}.err \
