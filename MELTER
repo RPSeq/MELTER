@@ -229,8 +229,8 @@ function Preprocess {
       -a 'docker(rpseq/melt:latest)' \
       -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
       -J ${NAME}.${sample}.PRE \
-      -o $LOGS/PRE.${sample}.out \
-      -e $LOGS/PRE.${sample}.err"
+      -o $LOGS/${NAME}.${sample}.PRE.out \
+      -e $LOGS/${NAME}.${sample}.PRE.err"
 
     CMD="\"java -Xmx4g -Xms2g -jar $MELT \
           Preprocess \
@@ -284,9 +284,9 @@ function IndivAnalysis {
               bsub -n 1 -M 26000000 \
               -a 'docker(rpseq/melt:latest)' \
               -R \"select[mem>26000] rusage[mem=26000] span[hosts=1]\" \
-              -J ${NAME}.${MEI}.${sample}.IND \
-              -o $LOGS/IND.${MEI}.${sample}.out \
-              -e $LOGS/IND.${MEI}.${sample}.err"
+              -J ${NAME}.${sample}.${MEI}.IND \
+              -o $LOGS/${NAME}.${sample}.${MEI}.IND.out \
+              -e $LOGS/${NAME}.${sample}.${MEI}.IND.err"
 
       CMD="\"java -Xmx16g -Xms8g -jar $MELT \
             IndivAnalysis \
@@ -336,7 +336,7 @@ function GroupAnalysis {
     do
       BAMNAME=`basename $BAM`
       sample=${BAMNAME%.*}
-      DEPENDS+=("done(${NAME}.${MEI}.${sample}.IND)")
+      DEPENDS+=("done(${NAME}.${sample}.${MEI}.IND)")
     done
 
     INDIV_DEPEND=$(sjoin " && " ${DEPENDS[@]})
@@ -353,9 +353,9 @@ function GroupAnalysis {
             bsub -n 1 -M 8000000 \
             -a 'docker(rpseq/melt:latest)' \
             -R \"select[mem>8000] rusage[mem=8000] span[hosts=1]\" \
-            -J ${NAME}.${MEI}.GROUP \
-            -o $LOGS/GROUP.${MEI}.out \
-            -e $LOGS/GROUP.${MEI}.err \
+            -J ${NAME}.${sample}.${MEI}.GROUP \
+            -o $LOGS/${NAME}.${sample}.${MEI}.GROUP.out \
+            -e $LOGS/${NAME}.${sample}.${MEI}.GROUP.err \
             -w \"$INDIV_DEPEND\""
 
     CMD="\"java -Xmx8g -Xms2g -jar $MELT \
@@ -393,7 +393,7 @@ function Genotype {
     TFILE=`basename $TREF`
     MEI=${TFILE%.*}
 
-    GROUP_DEPEND="done(${NAME}.${MEI}.GROUP)"
+    GROUP_DEPEND="done(${NAME}.${sample}.${MEI}.GROUP)"
 
     for BAM in ${BAMS[@]}
     do
@@ -420,9 +420,9 @@ function Genotype {
               bsub -n 1 -M 16000000 \
               -a 'docker(rpseq/melt:latest)' \
               -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
-              -J ${NAME}.${MEI}.${sample}.GENO \
-              -o $LOGS/GENO.${MEI}.${sample}.out \
-              -e $LOGS/GENO.${MEI}.${sample}.err \
+              -J ${NAME}.${sample}.${MEI}.GENO \
+              -o $LOGS/${NAME}.${sample}.${MEI}.GENO.out \
+              -e $LOGS/${NAME}.${sample}.${MEI}.GENO.err \
               -w \"$GROUP_DEPEND\""
 
       CMD="\"java -Xmx16g -Xms8g -jar $MELT \
@@ -465,7 +465,7 @@ function MakeVCF {
     do
       BAMNAME=`basename $BAM`
       sample=${BAMNAME%.*}
-      DEPENDS+=("done(${NAME}.${MEI}.${sample}.GENO)")
+      DEPENDS+=("done(${NAME}.${sample}.${MEI}.GENO)")
     done
 
     GENO_DEPEND=$(sjoin " && " ${DEPENDS[@]})
@@ -474,9 +474,9 @@ function MakeVCF {
       bsub -n 1 -M 8000000 \
       -a 'docker(rpseq/melt:latest)' \
       -R \"select[mem>8000] rusage[mem=8000] span[hosts=1]\" \
-      -J ${NAME}.${MEI}.VCF \
-      -o $LOGS/VCF.${MEI}.out \
-      -e $LOGS/VCF.${MEI}.err \
+      -J ${NAME}.${sample}.${MEI}.VCF \
+      -o $LOGS/${NAME}.${sample}.${MEI}.VCF.out \
+      -e $LOGS/${NAME}.${sample}.${MEI}.VCF.err \
       -w \"$GENO_DEPEND\""
 
     CMD="\"java -Xmx4g -Xms2g -jar $MELT \
