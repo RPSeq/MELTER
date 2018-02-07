@@ -228,7 +228,7 @@ function Preprocess {
       bsub -n 4 -M 4000000 \
       -a 'docker(rpseq/melt:latest)' \
       -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
-      -J ${NAME}.${sample}.PRE -w \"done($sample.BAM)\" \
+      -J ${NAME}.${sample}.PRE -w \"done($sample.INDEX)\" \
       -o $LOGS/${NAME}.${sample}.PRE.out \
       -e $LOGS/${NAME}.${sample}.PRE.err"
 
