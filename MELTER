@@ -230,7 +230,7 @@ function Preprocess {
       -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
       -J ${NAME}.${sample}.PRE \
       -o $LOGS/${NAME}.${sample}.PRE.out \
-      -e $LOGS/${NAME}.${sample}.PRE.err"
+      -e $LOGS/${NAME}.${sample}.PRE.err -w \"done(${NAME}.bam)\""
 
     CMD="\"java -Xmx4g -Xms2g -jar $MELT \
           Preprocess \
