@@ -474,9 +474,9 @@ function MakeVCF {
       bsub -n 1 -M 8000000 \
       -a 'docker(rpseq/melt:latest)' \
       -R \"select[mem>8000] rusage[mem=8000] span[hosts=1]\" \
-      -J ${NAME}.${sample}.${MEI}.VCF \
-      -o $LOGS/${NAME}.${sample}.${MEI}.VCF.out \
-      -e $LOGS/${NAME}.${sample}.${MEI}.VCF.err \
+      -J ${NAME}.${MEI}.VCF \
+      -o $LOGS/${NAME}.${MEI}.VCF.out \
+      -e $LOGS/${NAME}.${MEI}.VCF.err \
       -w \"$GENO_DEPEND\""
 
     CMD="\"java -Xmx4g -Xms2g -jar $MELT \
