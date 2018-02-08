@@ -523,23 +523,23 @@ function Concat {
           -e $LOGS/${NAME}.CONCAT.err \
           -w \"$CONCAT_DEPEND\""
 
-  CMD="\"#!/bin/bash -f 
-      for vcf in \\$(ls $WORK/*.vcf);
+  CMD="#!/bin/bash -f 
+      for vcf in `ls $WORK/*.vcf`;
       do
-        bgzip \\$vcf && bcftools index \\$vcf.gz;
+        bgzip $vcf && bcftools index $vcf.gz;
       done && \
       bcftools concat -a -O z \
         $WORK/*final_comp.vcf.gz > $WORK/ALL.vcf.gz && \
-      bcftools index $WORK/ALL.vcf.gz\""
+      bcftools index $WORK/ALL.vcf.gz"
 
       # if [ $QUEUE ]; then
       #   SUBMIT=$SUBMIT" -q $QUEUE"
       # fi
 
       if [ $DRY ]; then
-        echo $SUBMIT $CMD
+        echo $SUBMIT \'$CMD\'
       else
-        echo $SUBMIT $CMD | bash -
+        echo $SUBMIT \'$CMD\' | bash -
       fi
 
 }
