@@ -417,15 +417,15 @@ function Genotype {
       TSV=$(cut -f 1 -d _ <(echo $MEI))
 
       SUBMIT="LSF_DOCKER_PRESERVE_ENVIRONMENT=false \
-              bsub -n 1 -M 16000000 \
+              bsub -n 1 -M 48000000 \
               -a 'docker(rpseq/melt:latest)' \
-              -R \"select[mem>16000] rusage[mem=16000] span[hosts=1]\" \
+              -R \"select[mem>48000] rusage[mem=48000] span[hosts=1]\" \
               -J ${NAME}.${sample}.${MEI}.GENO \
               -o $LOGS/${NAME}.${sample}.${MEI}.GENO.out \
               -e $LOGS/${NAME}.${sample}.${MEI}.GENO.err \
               -w \"$GROUP_DEPEND\""
 
-      CMD="\"java -Xmx16g -Xms8g -jar $MELT \
+      CMD="\"java -Xmx30g -Xms8g -jar $MELT \
               Genotype \
               -e $TLEN \
               -w ${WORK}/${MEI}_DISCOVERY \
@@ -502,6 +502,47 @@ function MakeVCF {
 
 }
 
+function Concat {
+
+  DEPENDS=()
+
+  for TREF in `ls $TREFS/*.zip`
+  do
+
+    TFILE=`basename $TREF`
+    MEI=${TFILE%.*}
+    DEPENDS+=("done(${NAME}.${MEI}.VCF)")
+  done
+
+  CONCAT_DEPEND=$(sjoin " && " ${DEPENDS[@]})
+
+  SUBMIT="bsub -n 1 -M 4000000 \
+          -R \"select[mem>4000] rusage[mem=4000] span[hosts=1]\" \
+          -J ${NAME}.CONCAT \
+          -o $LOGS/${NAME}.CONCAT.out \
+          -e $LOGS/${NAME}.CONCAT.err \
+          -w \"$CONCAT_DEPEND\""
+
+  CMD="#!/bin/bash -f 
+      for vcf in `ls melt/*.vcf`
+      do
+        bgzip \$vcf && bcftools index \$vcf.gz
+      done && \
+      bcftools concat -a -O z \
+        $WORK/*final_comp.vcf.gz > $WORK/ALL.vcf.gz && \
+      bcftools index $WORK/ALL.vcf.gz"
+
+      if [ $QUEUE ]; then
+        SUBMIT=$SUBMIT" -q $QUEUE"
+      fi
+
+      if [ $DRY ]; then
+        echo $SUBMIT $CMD
+      else
+        echo $SUBMIT $CMD | bash -
+      fi
+
+}
 ####################################
 ####</Functions>
 ####################################
@@ -554,6 +595,9 @@ Genotype
 
 # 4.  Reduce
 MakeVCF
+
+# 5 Concat output VCFs
+Concat
 
 exit 0
 
